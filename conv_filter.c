@@ -151,7 +151,7 @@ int main(int argc, char *argv[]) {
 
                 fprintf(stderr, "Rows each: %d and Mother Rows: %d\n", rows_each, M_rows);
         }
-        
+
 
         if (me == MainProcess) {
                 matrix = (int **) malloc(matrix_size * sizeof(int *));
@@ -202,32 +202,32 @@ int main(int argc, char *argv[]) {
                         }
                 }
                 for (int i = 1; i < nprocs; i++) {
-                        int first_row = (M_rows + (i * rows_each)) - (2 * max_depth);
-                        int last_row = first_row + rows_each + max_depth;
-                        if (last_row > matrix_size) {
-                                last_row = matrix_size;
+                        int first_row = (M_rows + ((i - 1) * rows_each)) - max_depth;
+                        int last_row = (M_rows + ((i - 1) * rows_each) + (rows_each - 1) + max_depth);
+                        if (last_row > matrix_size - 1) {
+                                last_row = matrix_size - 1;
                         }
                         if (first_row < 0) {
                                 first_row = 0;
                         }
                         fprintf(stderr, "First Row: %d and Last Row: %d\n", first_row, last_row);
-                        for (int j = first_row; j < last_row; j++) {
+                        for (int j = first_row; j <= last_row; j++) {
                                 MPI_Send(matrix[j], matrix_size, MPI_INT, i, 0, MPI_COMM_WORLD);
                         }
                 }
         }
 
         if (me != MainProcess) {
-                int first_row = (M_rows + (me * rows_each)) - (2 * max_depth);
-                int last_row = first_row + rows_each + max_depth;
-                if (last_row > matrix_size) {
-                        last_row = matrix_size;
+                int first_row = (M_rows + ((me - 1) * rows_each)) - max_depth;
+                int last_row = (M_rows + ((me - 1) * rows_each) + (rows_each - 1) + max_depth);
+                if (last_row > matrix_size - 1) {
+                        last_row = matrix_size - 1;
                 }
                 if (first_row < 0) {
                         first_row = 0;
                 }
-                int recv_rows = last_row - first_row;
-                fprintf(stderr, "Process %d receiving %d rows\n", me, recv_rows);
+                int recv_rows = last_row - first_row + 1;
+                fprintf(stderr, "Process %d, first: %d and last: %d, receiving %d rows\n", me, first_row, last_row, recv_rows);
                 for (int k = 0; k < recv_rows; k++) {
                         MPI_Recv(local_matrix[k], matrix_size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 }
@@ -250,7 +250,7 @@ int main(int argc, char *argv[]) {
                 for (int i = max_depth; i < rows_each + max_depth; i++) {
                         fprintf(stderr, "Process %d Calculating row %d\n", me, i);
                         for (int j = 0; j < matrix_size; j++) {
-                                sub_result[row][j] = rounded_weighted_average(local_matrix, M_rows + row + (me * rows_each) - 1, j, max_depth, matrix_size, me);
+                                sub_result[row][j] = rounded_weighted_average(local_matrix, i, j, max_depth, matrix_size, me);
                         }
                         row++;
                 }
