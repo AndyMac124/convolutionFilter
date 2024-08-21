@@ -143,13 +143,13 @@ int main(int argc, char *argv[]) {
 
                 matrix_size = get_matrix_size(argv[1]);
 
-                //fprintf(stderr, "nprocs: %d \n", nprocs);
+                fprintf(stderr, "nprocs: %d \n", nprocs);
 
                 // TODO Add a check some for whether matrix_size is less than nprocs
                 rows_each = matrix_size / nprocs;
                 M_rows = rows_each + (matrix_size % nprocs);
 
-                //fprintf(stderr, "Rows each: %d and Mother Rows: %d\n", rows_each, M_rows);
+                fprintf(stderr, "Rows each: %d and Mother Rows: %d\n", rows_each, M_rows);
         }
         
 
@@ -202,12 +202,15 @@ int main(int argc, char *argv[]) {
                         }
                 }
                 for (int i = 1; i < nprocs; i++) {
-                        int first_row = (M_rows + (i * rows_each)) - max_depth;
+                        int first_row = (M_rows + (i * rows_each)) - (2 * max_depth);
                         int last_row = first_row + rows_each + max_depth;
                         if (last_row > matrix_size) {
                                 last_row = matrix_size;
                         }
-                        //fprintf(stderr, "First Row: %d and Last Row: %d\n", first_row, last_row);
+                        if (first_row < 0) {
+                                first_row = 0;
+                        }
+                        fprintf(stderr, "First Row: %d and Last Row: %d\n", first_row, last_row);
                         for (int j = first_row; j < last_row; j++) {
                                 MPI_Send(matrix[j], matrix_size, MPI_INT, i, 0, MPI_COMM_WORLD);
                         }
@@ -215,13 +218,16 @@ int main(int argc, char *argv[]) {
         }
 
         if (me != MainProcess) {
-                int first_row = (M_rows + (me * rows_each)) - max_depth;
+                int first_row = (M_rows + (me * rows_each)) - (2 * max_depth);
                 int last_row = first_row + rows_each + max_depth;
                 if (last_row > matrix_size) {
                         last_row = matrix_size;
                 }
+                if (first_row < 0) {
+                        first_row = 0;
+                }
                 int recv_rows = last_row - first_row;
-                //fprintf(stderr, "Process %d receiving %d rows\n", me, recv_rows);
+                fprintf(stderr, "Process %d receiving %d rows\n", me, recv_rows);
                 for (int k = 0; k < recv_rows; k++) {
                         MPI_Recv(local_matrix[k], matrix_size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 }
