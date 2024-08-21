@@ -1,4 +1,4 @@
-COMPILER = gcc
+COMPILER = mpicc
 CFLAGS = -Wall -pedantic
 COBJS = matrix.o
 
