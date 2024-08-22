@@ -149,6 +149,11 @@ int main(int argc, char *argv[]) {
                 rows_each = matrix_size / nprocs;
                 M_rows = rows_each + (matrix_size % nprocs);
 
+                if (nprocs > matrix_size) {
+                        rows_each = 1;
+                        M_rows = 1;
+                }
+
                 fprintf(stderr, "Rows each: %d and Mother Rows: %d\n", rows_each, M_rows);
         }
 
@@ -202,6 +207,9 @@ int main(int argc, char *argv[]) {
                         }
                 }
                 for (int i = 1; i < nprocs; i++) {
+                        if ((M_rows + ((i - 1) * rows_each)) > matrix_size) {
+                                continue;
+                        }
                         int first_row = (M_rows + ((i - 1) * rows_each)) - max_depth;
                         int last_row = (M_rows + ((i - 1) * rows_each) + (rows_each - 1) + max_depth);
                         if (last_row > matrix_size - 1) {
@@ -217,7 +225,7 @@ int main(int argc, char *argv[]) {
                 }
         }
 
-        if (me != MainProcess) {
+        if (me != MainProcess && ((M_rows + ((me - 1) * rows_each)) < matrix_size)) {
                 int first_row = (M_rows + ((me - 1) * rows_each)) - max_depth;
                 int last_row = (M_rows + ((me - 1) * rows_each) + (rows_each - 1) + max_depth);
                 if (last_row > matrix_size - 1) {
@@ -244,7 +252,7 @@ int main(int argc, char *argv[]) {
                         }
                         row++;
                 }
-        } else {
+        } else if ((M_rows + ((me - 1) * rows_each)) < matrix_size){
                 fprintf(stderr, "Process %d IS CALCULATING\n", me);
                 int row = 0;
                 for (int i = max_depth; i < rows_each + max_depth; i++) {
@@ -257,7 +265,7 @@ int main(int argc, char *argv[]) {
         }
         //fprintf(stderr, "Process %d HITS GATHER\n", me);
 
-        if (!(me == MainProcess)) {
+        if (!(me == MainProcess) && ((M_rows + ((me - 1) * rows_each)) < matrix_size)) {
                 for (int i = 0; i < rows_each; i++) {
                         MPI_Send(sub_result[i], matrix_size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD);
                 }
@@ -268,9 +276,13 @@ int main(int argc, char *argv[]) {
         if (me == MainProcess) {
                 int row = M_rows;
                 for (int i = 1; i < nprocs; i++) {
-                        for (int j = 0; j < rows_each; j++) {
-                                MPI_Recv(matrix[row], matrix_size, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                                row++;
+                        if ((M_rows + ((i - 1) * rows_each)) < matrix_size) {
+                                for (int j = 0; j < rows_each; j++) {
+                                        MPI_Recv(matrix[row], matrix_size,
+                                                 MPI_INT, i, 0, MPI_COMM_WORLD,
+                                                 MPI_STATUS_IGNORE);
+                                        row++;
+                                }
                         }
                 }
         }
