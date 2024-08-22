@@ -5,6 +5,7 @@
 #include <math.h>
 #include "mpi.h"
 #include "matrix.h"
+#include <stdbool.h>
 
 #define MainProcess 0
 
@@ -60,7 +61,8 @@ int rounded_weighted_average(int **local_matrix, int x, int y, int n, int size, 
         return total;
 }
 
-int parse_args(int argc, char *argv[], int *fd_in, int *fd_out, int *max_depth) {
+int parse_args(int argc, char *argv[], int *fd_in, int *fd_out, int *max_depth)
+{
 
         if (argc != 4) {
                 fprintf(stderr, "Usage: %s matrix_file dimension\n", argv[0]);
@@ -93,7 +95,8 @@ int parse_args(int argc, char *argv[], int *fd_in, int *fd_out, int *max_depth) 
 }
 
 // TODO This is from lectures
-void get_matrix(int fd, int matrix_size, int **matrix){
+void get_matrix(int fd, int matrix_size, int **matrix)
+{
         int row, col, slot;
 
         for(row = 1; row <= matrix_size; row++)
@@ -106,7 +109,8 @@ void get_matrix(int fd, int matrix_size, int **matrix){
                 }
 }
 
-void print2DArray(int **array, int rows, int columns) {
+void print2DArray(int **array, int rows, int columns)
+{
         for (int i = 0; i < rows; i++) {
                 for (int j = 0; j < columns; j++) {
                         printf("%d ", array[i][j]);
@@ -116,9 +120,18 @@ void print2DArray(int **array, int rows, int columns) {
         printf("\n\n");
 }
 
+typedef struct {
+    int max_depth;
+    int matrix_size;
+    int M_rows;
+    int rows_each;
+} REQ_DATA;
+
+
 int main(int argc, char *argv[]) {
         int fd_in, fd_out, matrix_size, max_depth, me, nprocs;
         int rows_each, M_rows;
+        REQ_DATA rd;
 
         MPI_Init(&argc, &argv);
         MPI_Comm_rank(MPI_COMM_WORLD, &me);
@@ -126,7 +139,9 @@ int main(int argc, char *argv[]) {
 
         int **matrix = NULL;
 
-        if (me == MainProcess) {
+        bool is_main = (me == MainProcess);
+
+        if (is_main) {
                 if (parse_args(argc, argv, &fd_in, &fd_out, &max_depth) < 0) {
                         MPI_Finalize();
                         exit(EXIT_FAILURE);
@@ -134,7 +149,6 @@ int main(int argc, char *argv[]) {
 
                 matrix_size = get_matrix_size(argv[1]);
 
-                // TODO Add a check some for whether matrix_size is less than nprocs
                 rows_each = matrix_size / nprocs;
                 M_rows = rows_each + (matrix_size % nprocs);
 
@@ -144,122 +158,118 @@ int main(int argc, char *argv[]) {
                 }
         }
 
-
-        if (me == MainProcess) {
+        if (is_main) {
                 matrix = (int **) malloc(matrix_size * sizeof(int *));
                 for (int i = 0; i < matrix_size; i++) {
                         matrix[i] = (int *) malloc(matrix_size * sizeof(int));
                 }
                 get_matrix(fd_in, matrix_size, matrix);
                 print2DArray(matrix, matrix_size, matrix_size);
+
+                rd.max_depth = max_depth;
+                rd.matrix_size = matrix_size;
+                rd.M_rows = M_rows;
+                rd.rows_each = rows_each;
         }
 
-        // COULD CREATE SUPERSIZED MATRIX HERE
-
-        //USE MPI STRUCTS?
-        MPI_Bcast(&max_depth, 1, MPI_INT, MainProcess, MPI_COMM_WORLD);
-        MPI_Bcast(&matrix_size, 1, MPI_INT, MainProcess,
-                  MPI_COMM_WORLD);
-        MPI_Bcast(&M_rows, 1, MPI_INT, MainProcess, MPI_COMM_WORLD);
-        MPI_Bcast(&rows_each, 1, MPI_INT, MainProcess, MPI_COMM_WORLD);
+        MPI_Bcast(&rd, sizeof(REQ_DATA), MPI_BYTE, MainProcess, MPI_COMM_WORLD);
 
         int **local_matrix;
         int **sub_result;
 
-        // Giving enough room for all
-        if (me == MainProcess) {
-                local_matrix = (int **)malloc((M_rows + max_depth) * sizeof(int *));
-                for (int i = 0; i < (M_rows + max_depth); i++) {
+        if (is_main) {
+                local_matrix = (int **)malloc((rd.M_rows + rd.max_depth) * sizeof(int *));
+                for (int i = 0; i < (rd.M_rows + rd.max_depth); i++) {
                         local_matrix[i] = (int *)malloc(matrix_size * sizeof(int));
                 }
         } else {
-                local_matrix = (int **)malloc((rows_each + (2 * max_depth)) * sizeof(int *));
-                for (int i = 0; i < (rows_each + (2 * max_depth)); i++) {
-                        local_matrix[i] = (int *)malloc(matrix_size * sizeof(int));
+                local_matrix = (int **)malloc((rd.rows_each + (2 * rd.max_depth)) * sizeof(int *));
+                for (int i = 0; i < (rd.rows_each + (2 * rd.max_depth)); i++) {
+                        local_matrix[i] = (int *)malloc(rd.matrix_size * sizeof(int));
                 }
-                sub_result = (int **)malloc((rows_each) * sizeof(int *));
-                for (int i = 0; i < rows_each; i++) {
-                        sub_result[i] = (int *)malloc(matrix_size * sizeof(int));
+                sub_result = (int **)malloc((rd.rows_each) * sizeof(int *));
+                for (int i = 0; i < rd.rows_each; i++) {
+                        sub_result[i] = (int *)malloc(rd.matrix_size * sizeof(int));
                 }
         }
 
-        if (me == MainProcess) {
-                for (int i = 0; i < M_rows + max_depth; i++) {
-                        if (i >= matrix_size) {
+        if (is_main) {
+                for (int i = 0; i < rd.M_rows + rd.max_depth; i++) {
+                        if (i >= rd.matrix_size) {
                                 break;
                         }
-                        for (int j = 0; j < matrix_size; j++) {
+                        for (int j = 0; j < rd.matrix_size; j++) {
                                 local_matrix[i][j] = matrix[i][j];
                         }
                 }
                 for (int i = 1; i < nprocs; i++) {
-                        if ((M_rows + ((i - 1) * rows_each)) > matrix_size) {
+                        if ((rd.M_rows + ((i - 1) * rd.rows_each)) > rd.matrix_size) {
                                 continue;
                         }
-                        int first_row = (M_rows + ((i - 1) * rows_each)) - max_depth;
-                        int last_row = (M_rows + ((i - 1) * rows_each) + (rows_each - 1) + max_depth);
-                        if (last_row > matrix_size - 1) {
-                                last_row = matrix_size - 1;
+                        int first_row = (rd.M_rows + ((i - 1) * rd.rows_each)) - rd.max_depth;
+                        int last_row = (rd.M_rows + ((i - 1) * rd.rows_each) + (rd.rows_each - 1) + rd.max_depth);
+                        if (last_row > rd.matrix_size - 1) {
+                                last_row = rd.matrix_size - 1;
                         }
                         if (first_row < 0) {
                                 first_row = 0;
                         }
                         for (int j = first_row; j <= last_row; j++) {
-                                MPI_Send(matrix[j], matrix_size, MPI_INT, i, 0, MPI_COMM_WORLD);
+                                MPI_Send(matrix[j], rd.matrix_size, MPI_INT, i, 0, MPI_COMM_WORLD);
                         }
                 }
         }
 
-        if (me != MainProcess && ((M_rows + ((me - 1) * rows_each)) < matrix_size)) {
-                int first_row = (M_rows + ((me - 1) * rows_each)) - max_depth;
-                int last_row = (M_rows + ((me - 1) * rows_each) + (rows_each - 1) + max_depth);
-                if (last_row > matrix_size - 1) {
-                        last_row = matrix_size - 1;
+        if (!is_main && ((rd.M_rows + ((me - 1) * rd.rows_each)) < rd.matrix_size)) {
+                int first_row = (rd.M_rows + ((me - 1) * rd.rows_each)) - rd.max_depth;
+                int last_row = (rd.M_rows + ((me - 1) * rd.rows_each) + (rd.rows_each - 1) + rd.max_depth);
+                if (last_row > rd.matrix_size - 1) {
+                        last_row = rd.matrix_size - 1;
                 }
                 if (first_row < 0) {
                         first_row = 0;
                 }
                 int recv_rows = last_row - first_row + 1;
                 for (int k = 0; k < recv_rows; k++) {
-                        MPI_Recv(local_matrix[k], matrix_size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                        MPI_Recv(local_matrix[k], rd.matrix_size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 }
         }
 
-        if (me == MainProcess) {
+        if (is_main) {
                 int row = 0;
-                for (int i = 0; i < M_rows; i++) {
-                        for (int j = 0; j < matrix_size; j++) {
-                                matrix[row][j] = rounded_weighted_average(local_matrix, row, j, max_depth, matrix_size, me);
+                for (int i = 0; i < rd.M_rows; i++) {
+                        for (int j = 0; j < rd.matrix_size; j++) {
+                                matrix[row][j] = rounded_weighted_average(local_matrix, row, j, rd.max_depth, rd.matrix_size, me);
                         }
                         row++;
                 }
-        } else if ((M_rows + ((me - 1) * rows_each)) < matrix_size){
+        } else if ((rd.M_rows + ((me - 1) * rd.rows_each)) < rd.matrix_size){
                 int row = 0;
-                int start = (M_rows + ((me - 1) * rows_each));
-                if (start > max_depth) {
-                        start = max_depth;
+                int start = (rd.M_rows + ((me - 1) * rd.rows_each));
+                if (start > rd.max_depth) {
+                        start = rd.max_depth;
                 }
-                for (int i = start; i < start + rows_each; i++) {
-                        for (int j = 0; j < matrix_size; j++) {
-                                sub_result[row][j] = rounded_weighted_average(local_matrix, i, j, max_depth, matrix_size, me);
+                for (int i = start; i < start + rd.rows_each; i++) {
+                        for (int j = 0; j < rd.matrix_size; j++) {
+                                sub_result[row][j] = rounded_weighted_average(local_matrix, i, j, rd.max_depth, rd.matrix_size, me);
                         }
                         row++;
                 }
         }
 
-        if (!(me == MainProcess) && ((M_rows + ((me - 1) * rows_each)) < matrix_size)) {
-                for (int i = 0; i < rows_each; i++) {
-                        MPI_Send(sub_result[i], matrix_size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD);
+        if (!is_main && ((rd.M_rows + ((me - 1) * rd.rows_each)) < rd.matrix_size)) {
+                for (int i = 0; i < rd.rows_each; i++) {
+                        MPI_Send(sub_result[i], rd.matrix_size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD);
                 }
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
 
-        if (me == MainProcess) {
-                int row = M_rows;
+        if (is_main) {
+                int row = rd.M_rows;
                 for (int i = 1; i < nprocs; i++) {
-                        if ((M_rows + ((i - 1) * rows_each)) < matrix_size) {
-                                for (int j = 0; j < rows_each; j++) {
+                        if ((rd.M_rows + ((i - 1) * rd.rows_each)) < rd.matrix_size) {
+                                for (int j = 0; j < rd.rows_each; j++) {
                                         MPI_Recv(matrix[row], matrix_size,
                                                  MPI_INT, i, 0, MPI_COMM_WORLD,
                                                  MPI_STATUS_IGNORE);
@@ -269,21 +279,19 @@ int main(int argc, char *argv[]) {
                 }
         }
 
-        //fprintf(stderr, "Process %d FINISHED GATHER\n", me);
-
-        if (me == MainProcess) {
-                for (int i = 0; i < matrix_size; i++) {
-                        if (set_row(fd_out, matrix_size, i + 1, matrix[i]) < 0) {
+        if (is_main) {
+                for (int i = 0; i < rd.matrix_size; i++) {
+                        if (set_row(fd_out, rd.matrix_size, i + 1, matrix[i]) < 0) {
                                 fprintf(stderr, "Failed to write row %d to file\n", i + 1);
                                 close(fd_out);
                                 exit(EXIT_FAILURE);
                         }
                 }
-                print2DArray(matrix, matrix_size, matrix_size);
+                print2DArray(matrix, rd.matrix_size, rd.matrix_size);
         }
 
-        if (me == MainProcess) {
-                for (int i = 0; i < M_rows + max_depth; i++) {
+        if (is_main) {
+                for (int i = 0; i < rd.M_rows + rd.max_depth; i++) {
                         free(local_matrix[i]);
                 }
                 free(local_matrix);
@@ -292,7 +300,7 @@ int main(int argc, char *argv[]) {
                         free(sub_result[i]);
                 }
                 free(sub_result);
-                for (int i = 0; i < rows_each + (2 * max_depth); i++) {
+                for (int i = 0; i < rd.rows_each + (2 * rd.max_depth); i++) {
                         free(local_matrix[i]);
                 }
                 free(local_matrix);
