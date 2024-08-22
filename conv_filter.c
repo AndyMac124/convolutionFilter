@@ -36,11 +36,11 @@ int get_matrix_size(char* file_name)
 
 int rounded_weighted_average(int **local_matrix, int x, int y, int n, int size, int me)
 {
-        fprintf(stderr, "Process %d entered rounded weight with val %d\n", me, local_matrix[x][y]);
+        //fprintf(stderr, "Process %d entered rounded weight with val %d\n", me, local_matrix[x][y]);
         int sub_total = 0;
         int num_neighbours = 0;
 
-        fprintf(stderr, "I: %d, J: %d\n", x, y);
+        //fprintf(stderr, "I: %d, J: %d\n", x, y);
 
         for (int i = x + -n; i <= x + n; i++) {
                 for (int j = y + -n; j <= y + n; j++) {
@@ -48,14 +48,10 @@ int rounded_weighted_average(int **local_matrix, int x, int y, int n, int size, 
                         int ax = abs(j - y);
                         int c_depth = (ax > ay) ? ax : ay;
                         int m_n = n / c_depth;
-                        //fprintf(stderr, "MN: %d\n", m_n);
                         if ((i == x && j == y) || i > size-1 || j > size-1 || i < 0 || j < 0) {
-                                //fprintf(stderr, "Continuing\n");
                                 continue;
                         }
-                        //fprintf(stderr, "val: %d with depth %d\n", local_matrix[i][j], c_depth);
                         sub_total += m_n * local_matrix[i][j];
-                        //fprintf(stderr, "sub_total: %d\n", sub_total);
                         num_neighbours++;
                 }
         }
@@ -64,9 +60,9 @@ int rounded_weighted_average(int **local_matrix, int x, int y, int n, int size, 
                 fprintf(stderr, "Error: Division by zero in rounded_weighted_average.\n");
                 exit(EXIT_FAILURE);
         }
-        fprintf(stderr, "Sub_Total: %d and num_neighbours: %d for value %d %d by process %d\n", sub_total, num_neighbours, x, y, me);
-        int total = round(sub_total / num_neighbours);
-        fprintf(stderr, "NEWVAL: %d\n", total);
+        //fprintf(stderr, "Sub_Total: %d and num_neighbours: %d for value %d %d by process %d\n", sub_total, num_neighbours, x, y, me);
+        int total = sub_total / num_neighbours;
+        //fprintf(stderr, "NEWVAL: %d\n", total);
         return total;
 }
 
@@ -154,7 +150,7 @@ int main(int argc, char *argv[]) {
                         M_rows = 1;
                 }
 
-                fprintf(stderr, "Rows each: %d and Mother Rows: %d\n", rows_each, M_rows);
+                //fprintf(stderr, "Rows each: %d and Mother Rows: %d\n", rows_each, M_rows);
         }
 
 
@@ -186,13 +182,13 @@ int main(int argc, char *argv[]) {
                         local_matrix[i] = (int *)malloc(matrix_size * sizeof(int));
                 }
         } else {
-                fprintf(stderr, "B6\n");
+                //fprintf(stderr, "B6\n");
                 local_matrix = (int **)malloc((rows_each + (2 * max_depth)) * sizeof(int *));
                 for (int i = 0; i < (rows_each + (2 * max_depth)); i++) {
                         local_matrix[i] = (int *)malloc(matrix_size * sizeof(int));
                 }
                 sub_result = (int **)malloc((rows_each) * sizeof(int *));
-                for (int i = 0; i < (rows_each); i++) {
+                for (int i = 0; i < rows_each; i++) {
                         sub_result[i] = (int *)malloc(matrix_size * sizeof(int));
                 }
         }
@@ -218,8 +214,9 @@ int main(int argc, char *argv[]) {
                         if (first_row < 0) {
                                 first_row = 0;
                         }
-                        fprintf(stderr, "First Row: %d and Last Row: %d\n", first_row, last_row);
+                        //fprintf(stderr, "First Row: %d and Last Row: %d\n", first_row, last_row);
                         for (int j = first_row; j <= last_row; j++) {
+                                //fprintf(stderr, "Sending row %d\n", j);
                                 MPI_Send(matrix[j], matrix_size, MPI_INT, i, 0, MPI_COMM_WORLD);
                         }
                 }
@@ -235,8 +232,9 @@ int main(int argc, char *argv[]) {
                         first_row = 0;
                 }
                 int recv_rows = last_row - first_row + 1;
-                fprintf(stderr, "Process %d, first: %d and last: %d, receiving %d rows\n", me, first_row, last_row, recv_rows);
+                //fprintf(stderr, "Process %d, first: %d and last: %d, receiving %d rows\n", me, first_row, last_row, recv_rows);
                 for (int k = 0; k < recv_rows; k++) {
+                        //fprintf(stderr, "Process %d received row %d\n", me, first_row + k);
                         MPI_Recv(local_matrix[k], matrix_size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 }
                 //fprintf(stderr, "LOADED OWN ARRAY\n");
@@ -245,7 +243,8 @@ int main(int argc, char *argv[]) {
         if (me == MainProcess) {
                 //fprintf(stderr, "MAIN IS CALCULATING\n");
                 int row = 0;
-                for (int i = max_depth; i < M_rows + max_depth; i++) {
+                for (int i = 0; i < M_rows; i++) {
+                        fprintf(stderr, "MAIN is adding something, i: %d\n", i);
                         //fprintf(stderr, "Process %d Calculating row %d\n", me, i);
                         for (int j = 0; j < matrix_size; j++) {
                                 matrix[row][j] = rounded_weighted_average(local_matrix, row, j, max_depth, matrix_size, me);
@@ -253,10 +252,14 @@ int main(int argc, char *argv[]) {
                         row++;
                 }
         } else if ((M_rows + ((me - 1) * rows_each)) < matrix_size){
-                fprintf(stderr, "Process %d IS CALCULATING\n", me);
+                //fprintf(stderr, "Process %d IS CALCULATING\n", me);
                 int row = 0;
-                for (int i = max_depth; i < rows_each + max_depth; i++) {
-                        fprintf(stderr, "Process %d Calculating row %d\n", me, i);
+                int start = (M_rows + ((me - 1) * rows_each));
+                if (start > max_depth) {
+                        start = max_depth;
+                }
+                for (int i = start; i < start + rows_each; i++) {
+                        fprintf(stderr, "Process %d Calculating index %d\n", me, i);
                         for (int j = 0; j < matrix_size; j++) {
                                 sub_result[row][j] = rounded_weighted_average(local_matrix, i, j, max_depth, matrix_size, me);
                         }
@@ -264,6 +267,7 @@ int main(int argc, char *argv[]) {
                 }
         }
         //fprintf(stderr, "Process %d HITS GATHER\n", me);
+        MPI_Barrier(MPI_COMM_WORLD);
 
         if (!(me == MainProcess) && ((M_rows + ((me - 1) * rows_each)) < matrix_size)) {
                 for (int i = 0; i < rows_each; i++) {
@@ -272,6 +276,7 @@ int main(int argc, char *argv[]) {
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
+        fprintf(stderr, "Process %d CLEARED BARRIER\n", me);
 
         if (me == MainProcess) {
                 int row = M_rows;
@@ -287,7 +292,7 @@ int main(int argc, char *argv[]) {
                 }
         }
 
-        fprintf(stderr, "Process %d FINISHED GATHER\n", me);
+        //fprintf(stderr, "Process %d FINISHED GATHER\n", me);
 
         if (me == MainProcess) {
                 fprintf(stderr, "Process %d Entered writing\n", me);
