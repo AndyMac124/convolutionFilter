@@ -7,7 +7,21 @@
 #include "matrix.h"
 #include <stdbool.h>
 
-#define MainProcess 0
+#define MainProc 0
+
+typedef struct {
+    int max_depth;
+    int matrix_size;
+    int m_rows;
+    int rows_each;
+    int final_row;
+} SHARED_DATA;
+
+typedef struct {
+    int first_calc_row;
+    int last_calc_row;
+    int me;
+} PROCESS_DATA;
 
 int get_matrix_size(char* file_name)
 {
@@ -34,7 +48,7 @@ int get_matrix_size(char* file_name)
         return matrix_size;
 }
 
-int rounded_weighted_average(int **local_matrix, int x, int y, int n, int size, int me)
+int rounded_weighted_average(int **local_matrix, int x, int y, int n, int size)
 {
         double sub_total = 0;
         double num_neighbours = 0;
@@ -95,7 +109,7 @@ int parse_args(int argc, char *argv[], int *fd_in, int *fd_out, int *max_depth)
 }
 
 // TODO This is from lectures
-void get_matrix(int fd, int matrix_size, int **matrix)
+void get_matrix_from_file(int fd, int matrix_size, int **matrix)
 {
         int row, col, slot;
 
@@ -130,7 +144,7 @@ void divide_rows(int* rows_each, int* M_rows, int matrix_size, int nprocs)
         }
 }
 
-void build_matrix(int ***matrix, int rows, int col)
+void build_empty_matrix(int ***matrix, int rows, int col)
 {
         *matrix = (int **) malloc(rows * sizeof(int *));
         for (int i = 0; i < rows; i++) {
@@ -149,18 +163,25 @@ void write_to_file(int rows, int **matrix, int fd_out)
         }
 }
 
-
-void receive_results(int row, int nprocs, int rows_each, int matrix_size, int **matrix)
+bool process_has_jobs(SHARED_DATA *shared, int me)
 {
+        return ((shared->m_rows + ((me - 1) * shared->rows_each)) < shared->matrix_size);
+}
+
+
+void receive_results(SHARED_DATA *data, int **matrix, int nprocs)
+{
+        int row = data->m_rows;
         for (int i = 1; i < nprocs; i++) {
-                if ((row + ((i - 1) * rows_each)) < matrix_size) {
-                        for (int j = 0; j < rows_each; j++) {
-                                MPI_Recv(matrix[row], matrix_size,
+                if (process_has_jobs(data, i)) {
+                        for (int j = 0; j < data->rows_each; j++) {
+                                MPI_Recv(matrix[row], data->matrix_size,
                                          MPI_INT, i, 0, MPI_COMM_WORLD,
                                          MPI_STATUS_IGNORE);
                                 row++;
                         }
                 }
+
         }
 }
 
@@ -173,40 +194,40 @@ void free_int_array_memory(int **array, int rows)
 }
 
 
-void calculate_values(int start, int end, int size, int **arr_out, int **arr_in, int depth, int me)
+void calculate_values(PROCESS_DATA *p_data, SHARED_DATA *shared, int **arr_out, int **arr_in)
 {
         int row = 0;
-        for (int i = start; i <= end; i++) {
-                for (int j = 0; j < size; j++) {
-                        arr_out[row][j] = rounded_weighted_average(arr_in, i, j, depth, size, me);
+        for (int i = p_data->first_calc_row; i <= p_data->last_calc_row; i++) {
+                for (int j = 0; j < shared->matrix_size; j++) {
+                        arr_out[row][j] = rounded_weighted_average(arr_in, i, j, shared->max_depth, shared->matrix_size);
                 }
                 row++;
         }
 }
 
-void receive_rows(int size, int **arr_in, int first_calc_row, int last_calc_row, int depth)
+void receive_rows(PROCESS_DATA *p_data, SHARED_DATA *shared, int **arr_in)
 {
-        int first_row = first_calc_row - depth;
-        int last_row = last_calc_row + depth;
-        if (last_row > size - 1) {
-                last_row = size - 1;
+        int first_row = p_data->first_calc_row - shared->max_depth;
+        int last_row = p_data->last_calc_row + shared->max_depth;
+        if (last_row > shared->matrix_size - 1) {
+                last_row = shared->matrix_size - 1;
         }
         if (first_row < 0) {
                 first_row = 0;
         }
         int recv_rows = last_row - first_row + 1;
         for (int k = 0; k < recv_rows; k++) {
-                MPI_Recv(arr_in[k], size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(arr_in[k], shared->matrix_size, MPI_INT, MainProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
 }
 
-int calc_receiving_rows(int m_rows, int me, int rows_each, int depth, int size)
+int calc_receiving_rows(SHARED_DATA *shared, int me)
 {
-        int first_row = m_rows + ((me - 1) * rows_each) - depth;
+        int first_row = shared->m_rows + ((me - 1) * shared->rows_each) - shared->max_depth;
 
-        int last_row = (m_rows + ((me - 1) * rows_each) + (rows_each - 1) + depth);
-        if (last_row > size - 1) {
-                last_row = size - 1;
+        int last_row = (shared->m_rows + ((me - 1) * shared->rows_each) + (shared->rows_each - 1) + shared->max_depth);
+        if (last_row > shared->matrix_size - 1) {
+                last_row = shared->matrix_size - 1;
         }
         if (first_row < 0) {
                 first_row = 0;
@@ -217,25 +238,25 @@ int calc_receiving_rows(int m_rows, int me, int rows_each, int depth, int size)
 void rec_rows(int rows, int **arr, int size)
 {
         for (int k = 0; k < rows; k++) {
-                MPI_Recv(arr[k], size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(arr[k], size, MPI_INT, MainProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
 }
 
-int calc_last_row(int first_row, int row_each, int final_row)
+int calc_last_row(SHARED_DATA *shared, int first_row)
 {
-        int last_row = first_row + row_each - 1;
-        if (last_row > final_row) {
-                last_row = final_row;
+        int last_row = first_row + shared->rows_each - 1;
+        if (last_row > shared->final_row) {
+                last_row = shared->final_row;
         }
         return last_row;
 }
 
 
-int calc_first_row(int M_rows, int me, int rows_each, int depth)
+int calc_first_row(SHARED_DATA *shared, int me)
 {
-        int first_row = M_rows + ((me - 1) * rows_each);
-        if (first_row > depth) {
-                first_row = depth;
+        int first_row = shared->m_rows + ((me - 1) * shared->rows_each);
+        if (first_row > shared->max_depth) {
+                first_row = shared->max_depth;
         }
         if (first_row < 0) {
                 first_row = 0;
@@ -244,59 +265,83 @@ int calc_first_row(int M_rows, int me, int rows_each, int depth)
 }
 
 
-void copy_to_matrix(int row, int final_row, int size, int **arr_in, int **arr_out)
+void copy_matrix(SHARED_DATA *shared, int **arr_in, int **arr_out)
 {
-        if (row > final_row) {
-                return;
-        }
-        for (int col = 0; col < size; col++) {
-                arr_in[row][col] = arr_out[row][col];
+        for (int row = 0; row < shared->m_rows + shared->max_depth; row++) {
+                if (row > shared->final_row) {
+                        return;
+                }
+                for (int col = 0; col < shared->matrix_size; col++) {
+                        arr_in[row][col] = arr_out[row][col];
+                }
         }
 }
 
 
-void send_rows(int m_rows, int rows_each, int depth, int final_row, int size, int **arr, int i)
+void send_rows(SHARED_DATA *shared, int **arr, int nprocs)
 {
-        int first_row = (m_rows + ((i - 1) * rows_each)) - depth;
-        int last_row = (m_rows + ((i - 1) * rows_each) + (rows_each - 1) + depth);
-        if (last_row > final_row) {
-                last_row = final_row;
-        }
-        if (first_row < 0) {
-                first_row = 0;
-        }
-        for (int j = first_row; j <= last_row; j++) {
-                MPI_Send(arr[j], size, MPI_INT, i, 0, MPI_COMM_WORLD);
+        for (int i = 1; i < nprocs; i++) {
+                if (process_has_jobs(shared, i)) {
+                        int first_row = (shared->m_rows + ((i - 1) * shared->rows_each)) - shared->max_depth;
+                        int last_row = (shared->m_rows + ((i - 1) * shared->rows_each) + (shared->rows_each - 1) + shared->max_depth);
+                        if (last_row > shared->final_row) {
+                                last_row = shared->final_row;
+                        }
+                        if (first_row < 0) {
+                                first_row = 0;
+                        }
+                        for (int j = first_row; j <= last_row; j++) {
+                                MPI_Send(arr[j], shared->matrix_size, MPI_INT, i, 0, MPI_COMM_WORLD);
+                        }
+                }
         }
 }
 
 
-typedef struct {
-    int max_depth;
-    int matrix_size;
-    int M_rows;
-    int rows_each;
-    int final_row;
-} REQ_DATA;
+void set_process_data(PROCESS_DATA *p_data, SHARED_DATA shared, bool is_main, int me)
+{
+        if (is_main) {
+                p_data->first_calc_row = 0;
+                p_data->last_calc_row = shared.m_rows - 1;
+                p_data->me = me;
+        } else {
+                p_data->first_calc_row = calc_first_row(&shared, me);
+                p_data->last_calc_row = calc_last_row(&shared, p_data->first_calc_row);
+                p_data->me = me;
+        }
+}
 
-typedef struct {
-    int first_calc_row;
-    int last_calc_row;
-    int me;
-} PROCESS_DATA;
+void set_required_data(SHARED_DATA *shared, int max_depth, int matrix_size, int m_rows, int rows_each)
+{
+        shared->max_depth = max_depth;
+        shared->matrix_size = matrix_size;
+        shared->m_rows = m_rows;
+        shared->rows_each = rows_each;
+        shared->final_row = shared->matrix_size - 1;
+}
 
+void send_results_to_main(SHARED_DATA *shared, int **arr)
+{
+        for (int i = 0; i < shared->rows_each; i++) {
+                MPI_Send(arr[i], shared->matrix_size, MPI_INT, MainProc, 0,
+                         MPI_COMM_WORLD);
+        }
+}
 
 int main(int argc, char *argv[]) {
-        int fd_in, fd_out, matrix_size, max_depth, me, nprocs, rows_each, M_rows;
-        REQ_DATA rd;
+        int fd_in, fd_out, matrix_size, max_depth, me, nprocs, p_rows, m_rows;
+        SHARED_DATA shared;
 
         MPI_Init(&argc, &argv);
         MPI_Comm_rank(MPI_COMM_WORLD, &me);
         MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
         int **matrix = NULL;
-        bool is_main = (me == MainProcess);
+        int **local_matrix;
+        int **sub_result;
         PROCESS_DATA p_data;
+
+        bool is_main = (me == MainProc);
 
         if (is_main) {
                 if (parse_args(argc, argv, &fd_in, &fd_out, &max_depth) < 0) {
@@ -304,74 +349,42 @@ int main(int argc, char *argv[]) {
                         exit(EXIT_FAILURE);
                 }
                 matrix_size = get_matrix_size(argv[1]);
-                divide_rows(&rows_each, &M_rows, matrix_size, nprocs);
-                build_matrix(&matrix, matrix_size, matrix_size);
-                get_matrix(fd_in, matrix_size, matrix);
-
-                // TODO This will be removed
-                print2DArray(matrix, matrix_size, matrix_size);
-
-                rd.max_depth = max_depth;
-                rd.matrix_size = matrix_size;
-                rd.M_rows = M_rows;
-                rd.rows_each = rows_each;
-                rd.final_row = rd.matrix_size - 1;
+                divide_rows(&p_rows, &m_rows, matrix_size, nprocs);
+                build_empty_matrix(&matrix, matrix_size, matrix_size);
+                get_matrix_from_file(fd_in, matrix_size, matrix);
+                print2DArray(matrix, matrix_size, matrix_size); // TODO This will be removed
+                set_required_data(&shared, max_depth, matrix_size, m_rows, p_rows);
         }
 
-        MPI_Bcast(&rd, sizeof(REQ_DATA), MPI_BYTE, MainProcess, MPI_COMM_WORLD);
+        MPI_Bcast(&shared, sizeof(SHARED_DATA), MPI_BYTE, MainProc, MPI_COMM_WORLD);
 
-        bool has_jobs = ((rd.M_rows + ((me - 1) * rd.rows_each)) < rd.matrix_size);
+        bool has_jobs = process_has_jobs(&shared, me);
 
-        // TODO Form a struct to pass around?
-        int final_row = rd.final_row;
-        int depth = rd.max_depth;
-        int size = rd.matrix_size;
-
-        int first_calc_row, last_calc_row;
-        int **local_matrix;
-        int **sub_result;
-
-        // SETUP
-        if (is_main) {
-                build_matrix(&local_matrix, (rd.M_rows + rd.max_depth), matrix_size);
-        } else if (!is_main && has_jobs) {
-                build_matrix(&local_matrix, rd.rows_each + (2 * rd.max_depth), rd.matrix_size);
-                build_matrix(&sub_result, rd.rows_each, rd.matrix_size);
-                first_calc_row = calc_first_row(rd.M_rows, me, rd.rows_each, depth);
-                last_calc_row = calc_last_row(first_calc_row, rd.rows_each, final_row);
+        if (has_jobs) {
+                set_process_data(&p_data, shared, is_main, me);
+                build_empty_matrix(&local_matrix, shared.rows_each + (2 * shared.max_depth), shared.matrix_size);
+                build_empty_matrix(&sub_result, shared.rows_each, shared.matrix_size);
         }
 
         // DO WORK
         if (is_main) {
-                for (int r = 0; r < rd.M_rows + rd.max_depth; r++) {
-                        copy_to_matrix(r, final_row, size, local_matrix, matrix);
-                }
-                for (int i = 1; i < nprocs; i++) {
-                        if (!has_jobs) {
-                                continue;
-                        }
-                        send_rows(rd.M_rows, rd.rows_each, depth, final_row, size, matrix, i);
-                }
-                calculate_values(0, rd.M_rows - 1, size, matrix, local_matrix, depth, me);
-                receive_results(rd.M_rows, nprocs, rows_each, matrix_size, matrix);
-                // SETTING OUTPUT
+                build_empty_matrix(&local_matrix, (shared.m_rows + shared.max_depth), shared.matrix_size);
+                copy_matrix(&shared, local_matrix, matrix);
+                calculate_values(&p_data, &shared, matrix, local_matrix);
+                send_rows(&shared, matrix, nprocs);
+                receive_results(&shared, matrix, nprocs);
                 write_to_file(matrix_size, matrix, fd_out);
-                // TODO Remove this last
-                print2DArray(matrix, rd.matrix_size, rd.matrix_size);
-                free_int_array_memory(local_matrix, rd.M_rows + rd.max_depth);
+                print2DArray(matrix, matrix_size, matrix_size); // TODO Remove this last
+                free_int_array_memory(local_matrix, shared.m_rows + shared.max_depth);
+                close(fd_in);
+                close(fd_out);
         } else if (has_jobs) {
-                int recv_rows = calc_receiving_rows(rd.M_rows, me, rd.rows_each, depth, size);
-                rec_rows(recv_rows, local_matrix, size);
-                calculate_values(first_calc_row, last_calc_row, size, sub_result, local_matrix, depth, me);
-                for (int i = 0; i < rd.rows_each; i++) {
-                        MPI_Send(sub_result[i], rd.matrix_size, MPI_INT, MainProcess, 0, MPI_COMM_WORLD);
-                }
-                free_int_array_memory(sub_result, rows_each);
-                free_int_array_memory(local_matrix, rd.rows_each + (2 * rd.max_depth));
+                rec_rows(calc_receiving_rows(&shared, p_data.me), local_matrix, shared.matrix_size);
+                calculate_values(&p_data, &shared, sub_result, local_matrix);
+                send_results_to_main(&shared, sub_result);
+                free_int_array_memory(sub_result, shared.rows_each);
+                free_int_array_memory(local_matrix, shared.rows_each + (2 * shared.max_depth));
         }
-
-        close(fd_in);
-        close(fd_out);
 
         MPI_Finalize ();
         exit (EXIT_SUCCESS);
