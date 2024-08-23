@@ -31,7 +31,7 @@ void parse_args(int argc, char *argv[], int *fd_in, int *fd_out, int *max_depth)
 
         // TODO Can depth be 0?
         *max_depth = atoi(argv[3]);
-        if (*max_depth <= 0) {
+        if (*max_depth < 0) {
                 fprintf(stderr, "Usage: %s input_file, output_file, neighbourhood_depth\n", argv[0]);
                 close(*fd_in);
                 close(*fd_out);
@@ -67,32 +67,40 @@ void set_shared_data(SHARED_DATA *shared, int max_depth, int matrix_size, int m_
         shared->final_row = shared->matrix_size - 1;
 }
 
-void set_process_data(PROCESS_DATA *p_data, SHARED_DATA shared, bool is_main, int me)
+int set_recv_rows_main(SHARED_DATA *shared)
+{
+        int recv = shared->m_rows + shared->max_depth;
+        if (recv > shared->matrix_size) {
+                recv = shared->matrix_size;
+        }
+        return recv;
+}
+
+void set_process_data(PROCESS_DATA *p_data, SHARED_DATA *shared, bool is_main, int me)
 {
         if (is_main) {
                 p_data->first_calc_row = 0;
-                p_data->last_calc_row = shared.m_rows - 1;
+                p_data->last_calc_row = shared->m_rows - 1;
                 p_data->me = me;
                 p_data->first_local_row = 0;
-                p_data->last_local_row = shared.m_rows - 1;
-                if (p_data->last_local_row > shared.final_row) {
-                        p_data->last_local_row = shared.final_row;
+                p_data->last_local_row = shared->m_rows - 1;
+                if (p_data->last_local_row > shared->final_row) {
+                        p_data->last_local_row = shared->final_row;
                 }
-                p_data->length_local_array = shared.m_rows + shared.max_depth;
-                if (p_data->length_local_array > shared.final_row + 1) {
-                        p_data->length_local_array = shared.final_row + 1;
+                p_data->length_local_array = shared->m_rows + shared->max_depth;
+                if (p_data->length_local_array > shared->final_row + 1) {
+                        p_data->length_local_array = shared->final_row + 1;
                 }
-                p_data->total_rows = shared.m_rows;
+                p_data->total_rows = shared->m_rows;
         } else {
-                p_data->first_calc_row = calc_first_row(&shared, me);
-                p_data->last_calc_row = calc_last_row(&shared, p_data->first_calc_row);
+                p_data->first_calc_row = first_calc_row(shared, me);
+                p_data->last_calc_row = last_calc_row(shared, p_data->first_calc_row);
                 p_data->me = me;
-                p_data->total_rows = shared.rows_each;
-                fprintf(stderr, "P: %d, First: %d and last: %d for m: %d, rows: %d, depth: %d\n", me, p_data->first_calc_row, p_data->last_calc_row, shared.m_rows, shared.rows_each, shared.max_depth);
+                p_data->total_rows = shared->rows_each;
         }
 }
 
-int calc_first_row(SHARED_DATA *shared, int me)
+int first_calc_row(SHARED_DATA *shared, int me)
 {
         int first_row = shared->m_rows + ((me - 1) * shared->rows_each);
         if (first_row > shared->final_row) {
@@ -104,7 +112,7 @@ int calc_first_row(SHARED_DATA *shared, int me)
         return first_row;
 }
 
-int calc_last_row(SHARED_DATA *shared, int first_row)
+int last_calc_row(SHARED_DATA *shared, int first_row)
 {
         int last_row = first_row + shared->rows_each - 1;
         if (last_row > shared->final_row) {
@@ -115,7 +123,6 @@ int calc_last_row(SHARED_DATA *shared, int first_row)
 
 int calc_receiving_rows(SHARED_DATA *shared, PROCESS_DATA *p_data)
 {
-        // TODO Always seems like last process faulting on last row?
         int first_row = shared->m_rows + ((p_data->me - 1) * shared->rows_each) - shared->max_depth;
 
         int last_row = (shared->m_rows + ((p_data->me - 1) * shared->rows_each) + (shared->rows_each - 1) + shared->max_depth);
@@ -127,10 +134,7 @@ int calc_receiving_rows(SHARED_DATA *shared, PROCESS_DATA *p_data)
         }
         int receiving_rows = last_row - first_row + 1;
         p_data->length_local_array = receiving_rows;
-        //fprintf(stderr, "FC: %d, LC: %d, LR: %d\n", p_data->first_calc_row, p_data->last_calc_row, receiving_rows);
         p_data->first_local_row = p_data->first_calc_row - first_row;
         p_data->last_local_row = p_data->first_local_row + shared->rows_each - 1;
-        //fprintf(stderr, "FLR: %d\n", p_data->first_local_row);
-        //fprintf(stderr, "LLR: %d\n", p_data->last_local_row);
         return receiving_rows;
 }

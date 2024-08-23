@@ -23,7 +23,6 @@ void send_rows(SHARED_DATA *shared, int **arr, int nprocs)
                         if (first_row < 0) {
                                 first_row = 0;
                         }
-                        //fprintf(stderr, "First:%d,  <= Last:%d for P:%d\n", first_row, last_row, nprocs);
 
                         for (int j = first_row; j <= last_row; j++) {
                                 if (MPI_Send(arr[j], shared->matrix_size, MPI_INT,
@@ -45,7 +44,6 @@ void receive_rows(int rows, int **arr, int size)
                         MPI_Abort(MPI_COMM_WORLD, -1);
                 }
         }
-        // TODO CHECK RECEIVING CORRECT NUMBER
 }
 
 void send_results_to_main(SHARED_DATA *shared, int **arr)
@@ -65,7 +63,6 @@ void receive_results(SHARED_DATA *data, int **matrix, int nprocs)
         for (int i = 1; i < nprocs; i++) {
                 if (process_has_jobs(data, i)) {
                         for (int j = 0; j < data->rows_each; j++) {
-                                fprintf(stderr, "RECEIVING INTO ROW: %d\n", row);
                                 if (MPI_Recv(matrix[row], data->matrix_size,
                                          MPI_INT, i, 0, MPI_COMM_WORLD,
                                          MPI_STATUS_IGNORE) != MPI_SUCCESS) {
