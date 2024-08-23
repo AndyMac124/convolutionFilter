@@ -15,6 +15,10 @@ typedef struct {
     int first_calc_row;
     int last_calc_row;
     int me;
+    int first_local_row;
+    int last_local_row;
+    int total_rows;
+    int length_local_array;
 } PROCESS_DATA;
 
 #endif //A3_STRUCTS_H
