@@ -1,3 +1,14 @@
+/*H*
+ * FILENAME: message_handling.c
+ *
+ * AUTHOR: Andrew McKenzie
+ * UNE EMAIL: amcken33@myune.edu.au
+ * STUDENT NUMBER: 220263507
+ *
+ * PURPOSE: Contains the message handling functions for the
+ * conv_filter program.
+ *
+ *H*/
 
 #include <mpi.h>
 #include <stdio.h>
@@ -5,6 +16,18 @@
 #include "message_handling.h"
 #include "conv_filter_utils.h"
 
+/**
+ * send_rows() - Sends rows from main to all processes
+ *
+ * @arg1: Pointer to shared data struct among MPI_COMM_WORLD.
+ * @arg2: Pointer to matrix to send from.
+ * @arg3: Number of processes in MPI_COMM_WORLD.
+ *
+ * Function sends rows from main to process, checking the process has
+ * rows it requires and calculates the exact amount to send.
+ *
+ * Return: void (pass by reference).
+ */
 void send_rows(SHARED_DATA *shared, int **arr, int nprocs)
 {
         for (int i = 1; i < nprocs; i++) {
@@ -35,6 +58,18 @@ void send_rows(SHARED_DATA *shared, int **arr, int nprocs)
         }
 }
 
+/**
+ * receive_rows() - To receive rows from main.
+ *
+ * @arg1: Number of rows to expect.
+ * @arg2: Pointer to matrix to store rows.
+ * @arg3: Number of columns in matrix.
+ *
+ * Function receives the given number of rows from Main and stores them in
+ * the indicated matrix.
+ *
+ * Return: void (pass by reference).
+ */
 void receive_rows(int rows, int **arr, int size)
 {
         for (int i = 0; i < rows; i++) {
@@ -46,6 +81,17 @@ void receive_rows(int rows, int **arr, int size)
         }
 }
 
+/**
+ * send_results_to_main() - For slave nodes to send rows to main.
+ *
+ * @arg1: Pointer to shared data struct among MPI_COMM_WORLD.
+ * @arg2: Pointer to array to read from for sending.
+ *
+ * Function reads from given array and sends the rows to the Main Process
+ * based on the number of rows each stored in the shared data struct.
+ *
+ * Return: void (pass by reference).
+ */
 void send_results_to_main(SHARED_DATA *shared, int **arr)
 {
         for (int i = 0; i < shared->rows_each; i++) {
@@ -57,6 +103,19 @@ void send_results_to_main(SHARED_DATA *shared, int **arr)
         }
 }
 
+/**
+ * receive_results() - For main to receive the results from slave nodes.
+ *
+ * @arg1: Pointer to shared data struct among MPI_COMM_WORLD.
+ * @arg2: Pointer to matrix to store the incoming results.
+ * @arg3: Number of processes in MPI_COMM_WORLD.
+ *
+ * Function will run through every process in the MPI_COMM_WORLD and wait
+ * to receive the results from them if they have rows to process, storing
+ * each row in the matrix given.
+ *
+ * Return: void (pass by reference).
+ */
 void receive_results(SHARED_DATA *data, int **matrix, int nprocs)
 {
         int row = data->m_rows;
