@@ -105,8 +105,8 @@ void calculate_values(PROCESS_DATA *p_data, SHARED_DATA *shared, int **arr_out, 
  * rounded_weighted_average() - Calculates the new value for a given index
  *
  * @arg1: Local processes matrix to read from.
- * @arg2: Target x coordinate for calculation.
- * @arg3: Target y coordinate for calculation.
+ * @arg2: Target y coordinate for calculation.
+ * @arg3: Target x coordinate for calculation.
  * @arg4: Maximum depth to consider.
  * @arg5: Maximum rows in this local matrix.
  * @arg6: Maximum columns in this local matrix.

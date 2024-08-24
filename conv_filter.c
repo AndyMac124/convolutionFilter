@@ -89,7 +89,7 @@ int main(int argc, char *argv[]) {
                 parse_args(argc, argv, &fd_in, &fd_out, &max_depth);
 
                 // Setting up the matrix from file in
-                matrix_size = get_matrix_size(argv[1]);
+                matrix_size = get_matrix_size(fd_in);
                 divide_rows(&p_rows, &m_rows, matrix_size, nprocs);
                 build_empty_matrix(&matrix, matrix_size, matrix_size);
                 get_matrix_from_file(fd_in, matrix_size, matrix);

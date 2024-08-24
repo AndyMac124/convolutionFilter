@@ -45,36 +45,32 @@ void get_matrix_from_file(int fd, int matrix_size, int **matrix)
 /**
  * get_matrix_size() - Reads a file to calculate size of matrix
  *
- * @arg1: The file name to get the size from.
+ * @arg1: File descriptor for input matrix.
  *
  * Function reads in a file assuming it is a square matrix of ints to
  * calculate the number of ints in a single row.
  *
  * Return: int, size of matrix.
  */
-int get_matrix_size(char* file_name)
+int get_matrix_size(int fd_in)
 {
-        int fd;
-        if ((fd = open(file_name, O_RDONLY)) == -1) {
-                fprintf(stderr, "Failed to open input file\n");
-                MPI_Abort(MPI_COMM_WORLD, -1);
-        }
+        // Setting to start of file as precaution
+        lseek(fd_in, 0, SEEK_SET);
 
-        off_t file_size = lseek(fd, 0, SEEK_END);
+        // Getting file size
+        off_t file_size = lseek(fd_in, 0, SEEK_END);
+
+        // Setting to start of file as precaution
+        lseek(fd_in, 0, SEEK_SET);
+
+        // Checking for errors
         if (file_size == -1) {
-                perror("lseek failed");
+                fprintf(stderr, "Failed to read matrix size\n");
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
 
-        int num_elements = file_size / sizeof(int);
-        int matrix_size = (int)sqrt(num_elements);
-
-        if (close(fd) == -1) {
-                perror("Failed to close file");
-                MPI_Abort(MPI_COMM_WORLD, -1);
-        }
-
-        return matrix_size;
+        // Returning value based on square matrix of ints
+        return ((int)sqrt(file_size / sizeof(int)));
 }
 
 /**
