@@ -17,6 +17,7 @@
  * RUNNING: The program is run by the following:
  *          mpiexec -np <number of processes> conv_filter <input file>
  *                      <output file> <max neighbourhood depth>
+ * Run Target Example: make run ARGS="A.mat B.mat 2"
  *
  * As per the Linux Kernel C programming guide:
  * - Function names use snake case for emphasis.
@@ -34,7 +35,6 @@
 #include <math.h>
 
 #include "mpi.h"
-#include "matrix.h"
 #include "conv_filter_utils.h"
 #include "file_handling.h"
 #include "matrix_handling.h"
@@ -123,6 +123,8 @@ int main(int argc, char *argv[]) {
                 build_empty_matrix(&local_matrix, recv, shared.matrix_size);
                 build_empty_matrix(&sub_result, shared.rows_each, shared.matrix_size);
         }
+
+        fprintf(stderr, "RECV: %d, length_local: %d\n", recv, p_data.length_local_array);
 
         if (is_main) {
                 // Sending rows from input matrix

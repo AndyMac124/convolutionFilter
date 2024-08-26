@@ -22,7 +22,7 @@ message_handling.o: message_handling.c conv_filter_utils.h
 	${COMPILER} ${CFLAGS} -c message_handling.c
 
 run: conv_filter
-
+	mpirun -np 4 conv_filter ${ARGS}
 
 clean:
 	rm -f *~ *.o ${EXES}
