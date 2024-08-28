@@ -1,7 +1,7 @@
 #ifndef A3_MESSAGE_HANDLING_H
 #define A3_MESSAGE_HANDLING_H
 
-#define MainProc 0
+#define MAIN_PROC 0
 
 #include "structs.h"
 

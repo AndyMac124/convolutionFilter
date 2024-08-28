@@ -40,17 +40,6 @@
 #include "matrix_handling.h"
 #include "message_handling.h"
 
-void print2DArray(int **array, int rows, int columns)
-{
-        for (int i = 0; i < rows; i++) {
-                for (int j = 0; j < columns; j++) {
-                        printf("%d ", array[i][j]);
-                }
-                printf("\n");
-        }
-        printf("\n\n");
-}
-
 /**
  * main() - Main function for the conv_filter program.
  * @arg1: Number of args from the terminal.
@@ -65,96 +54,98 @@ void print2DArray(int **array, int rows, int columns)
  *
  * Return: Int, zero on success, non-zero on failure.
  */
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
         // Declaring vars for main process to handle
-        int fd_in, fd_out, matrix_size, max_depth, me, nprocs, p_rows, m_rows;
-        SHARED_DATA shared;
+        int fdIn, fdOut, matrixSize, maxDepth, procRows, mainRows, nProcs, me;
+        int **matrix= NULL;
 
         // Initialising MPI environment
         MPI_Init(&argc, &argv);
+        MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
         MPI_Comm_rank(MPI_COMM_WORLD, &me);
-        MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-        // Data for each process
-        int **matrix= NULL;
-        int **local_matrix = NULL;
-        int **sub_result = NULL;
-        int recv = 0;
-        PROCESS_DATA p_data;
+        // local and shared vars
+        int **localMatrix = NULL;
+        int **subResult = NULL;
+        SHARED_DATA shared;
+        PROCESS_DATA pData;
 
         // Alias for brevity in the if statements
-        bool is_main = (me == MainProc);
+        bool isMain = (me == MAIN_PROC);
 
-        if (is_main) {
-                parse_args(argc, argv, &fd_in, &fd_out, &max_depth);
+        // Setting up the main process
+        if (isMain) {
+                parse_args(argc, argv, &fdIn, &fdOut, &maxDepth);
 
                 // Setting up the matrix from file in
-                matrix_size = get_matrix_size(fd_in);
-                divide_rows(&p_rows, &m_rows, matrix_size, nprocs);
-                build_empty_matrix(&matrix, matrix_size, matrix_size);
-                get_matrix_from_file(fd_in, matrix_size, matrix);
+                matrixSize = get_matrix_size(fdIn);
+                divide_rows(&procRows, &mainRows, matrixSize, nProcs);
+                build_empty_matrix(&matrix, matrixSize, matrixSize);
+                get_matrix_from_file(fdIn, matrixSize, matrix);
 
                 // Setting up shared struct
-                set_shared_data(&shared, max_depth, matrix_size, m_rows, p_rows);
+                set_shared_data(&shared, maxDepth, matrixSize, mainRows,
+                                procRows);
 
                 // Setting up mains local data
-                set_process_data(&p_data, &shared, is_main, me);
-                recv = set_recv_rows_main(&shared);
-                build_empty_matrix(&local_matrix, recv, shared.matrix_size);
-                print2DArray(matrix, matrix_size, matrix_size); // TODO This will be removed
+                set_process_data(&pData, &shared, isMain, me);
+                build_empty_matrix(&localMatrix, pData.lengthLocalArray,
+                                   shared.matrixSize);
         }
 
         // Broadcasting out the shared data struct
-        if (MPI_Bcast(&shared, sizeof(SHARED_DATA), MPI_BYTE, MainProc, MPI_COMM_WORLD) != MPI_SUCCESS) {
+        if (MPI_Bcast(&shared, sizeof(SHARED_DATA), MPI_BYTE, MAIN_PROC,
+                      MPI_COMM_WORLD) != MPI_SUCCESS) {
                 perror("Failed in broadcast of shared data");
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
 
         // If nprocs greater than rows, they won't have work to do
-        bool has_jobs = process_has_jobs(&shared, me);
+        bool hasJobs = process_has_jobs(&shared, me);
 
         // For processes other than main with rows to compute
-        if (has_jobs && !is_main) {
+        if (hasJobs && !isMain) {
                 // Setting their local data
-                set_process_data(&p_data, &shared, is_main, me);
-                recv = calc_receiving_rows(&shared, &p_data);
+                set_process_data(&pData, &shared, isMain, me);
 
                 // Allocating memory for arrays they will use
-                build_empty_matrix(&local_matrix, recv, shared.matrix_size);
-                build_empty_matrix(&sub_result, shared.rows_each, shared.matrix_size);
+                build_empty_matrix(&localMatrix, pData.lengthLocalArray,
+                                   shared.matrixSize);
+                build_empty_matrix(&subResult, shared.rowsEach,
+                                   shared.matrixSize);
         }
 
-        fprintf(stderr, "RECV: %d, length_local: %d\n", recv, p_data.length_local_array);
-
-        if (is_main) {
+        // Work for Main Process to do
+        if (isMain) {
                 // Sending rows from input matrix
-                send_rows(&shared, matrix, nprocs);
+                send_rows(&shared, matrix, nProcs);
 
                 // Calculating mains own rows
-                copy_matrix(&shared, local_matrix, matrix);
-                calculate_values(&p_data, &shared, matrix, local_matrix);
+                copy_matrix(&shared, localMatrix, matrix);
+                calculate_values(&pData, &shared, matrix, localMatrix);
 
                 // Receiving rest of rows and writing to file
-                receive_results(&shared, matrix, nprocs);
-                write_to_file(matrix_size, matrix, fd_out);
-                print2DArray(matrix, matrix_size, matrix_size); // TODO Remove this last
+                receive_results(&shared, matrix, nProcs);
+                write_to_file(matrixSize, matrix, fdOut);
 
                 // Cleaning up memory and files
-                free_int_array_memory(local_matrix, recv);
-                free_int_array_memory(matrix, shared.matrix_size);
-                close(fd_in);
-                close(fd_out);
-        } else if (has_jobs) {
+                free_int_array_memory(localMatrix, pData.lengthLocalArray);
+                free_int_array_memory(matrix, shared.matrixSize);
+                close(fdIn);
+                close(fdOut);
+        } else if (hasJobs) {
                 // Other processes with rows to compute will do their work
-                receive_rows(recv, local_matrix, shared.matrix_size);
-                calculate_values(&p_data, &shared, sub_result, local_matrix);
-                send_results_to_main(&shared, sub_result);
+                receive_rows(pData.lengthLocalArray, localMatrix,
+                             shared.matrixSize);
+                calculate_values(&pData, &shared, subResult, localMatrix);
+                send_results_to_main(&shared, subResult);
 
                 // Cleaning up their own malloc memory
-                free_int_array_memory(sub_result, shared.rows_each);
-                free_int_array_memory(local_matrix, recv);
+                free_int_array_memory(subResult, shared.rowsEach);
+                free_int_array_memory(localMatrix, pData.lengthLocalArray);
         }
 
-        MPI_Finalize ();
-        exit (EXIT_SUCCESS);
+        MPI_Finalize();
+        exit(EXIT_SUCCESS);
 }

@@ -31,13 +31,13 @@
  *
  * Return: void (pass by reference).
  */
-void get_matrix_from_file(int fd, int matrix_size, int **matrix)
+void get_matrix_from_file(int fd, int matrixSize, int **matrix)
 {
         int row, col, slot;
 
-        for(row = 1; row <= matrix_size; row++)
-                for(col = 1; col <= matrix_size; col++){
-                        get_slot(fd, matrix_size, row, col, &slot);
+        for(row = 1; row <= matrixSize; row++)
+                for(col = 1; col <= matrixSize; col++){
+                        get_slot(fd, matrixSize, row, col, &slot);
                         matrix[row - 1][col - 1] = slot;
                 }
 }
@@ -52,25 +52,25 @@ void get_matrix_from_file(int fd, int matrix_size, int **matrix)
  *
  * Return: int, size of matrix.
  */
-int get_matrix_size(int fd_in)
+int get_matrix_size(int fdIn)
 {
         // Setting to start of file as precaution
-        lseek(fd_in, 0, SEEK_SET);
+        lseek(fdIn, 0, SEEK_SET);
 
         // Getting file size
-        off_t file_size = lseek(fd_in, 0, SEEK_END);
+        off_t fileSize = lseek(fdIn, 0, SEEK_END);
 
         // Setting to start of file as precaution
-        lseek(fd_in, 0, SEEK_SET);
+        lseek(fdIn, 0, SEEK_SET);
 
         // Checking for errors
-        if (file_size == -1) {
+        if (fileSize == -1) {
                 fprintf(stderr, "Failed to read matrix size\n");
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
 
         // Returning value based on square matrix of ints
-        return ((int)sqrt(file_size / sizeof(int)));
+        return ((int) sqrt(fileSize / sizeof(int)));
 }
 
 /**
@@ -84,9 +84,9 @@ int get_matrix_size(int fd_in)
  *
  * Return: void (pass by reference).
  */
-void write_to_file(int rows, int **matrix, int fd_out)
+void write_to_file(int rows, int **matrix, int fdOut)
 {
         for (int i = 0; i < rows; i++) {
-                set_row(fd_out, rows, i + 1, matrix[i]);
+                set_row(fdOut, rows, i + 1, matrix[i]);
         }
 }

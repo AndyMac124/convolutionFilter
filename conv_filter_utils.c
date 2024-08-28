@@ -17,6 +17,11 @@
 #include "conv_filter_utils.h"
 #include "mpi.h"
 
+#define FILE_NAME_ARG 0
+#define FILE_IN_ARG 1
+#define FILE_OUT_ARG 2
+#define DEPTH 3
+
 /**
  * parse_args() - Processes command line arguments.
  *
@@ -28,33 +33,37 @@
  *
  * Return: void (pass by reference).
  */
-void parse_args(int argc, char *argv[], int *fd_in, int *fd_out, int *max_depth)
+void parse_args(int argc, char *argv[], int *fdIn, int *fdOut, int *maxDepth)
 {
 
         if (argc != 4) {
-                fprintf(stderr, "Usage: %s matrix_file dimension\n", argv[0]);
+                fprintf(stderr, "Usage: %s matrix_file dimension\n",
+                        argv[FILE_NAME_ARG]);
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
 
-        *fd_in = open (argv[1], O_RDONLY);
-        *fd_out = open (argv[2], O_WRONLY | O_CREAT, 0666);
+        *fdIn = open(argv[FILE_IN_ARG], O_RDONLY);
+        *fdOut = open(argv[FILE_OUT_ARG], O_WRONLY | O_CREAT, 0666);
 
-        if (*fd_in == -1) {
-                fprintf(stderr, "Usage: %s input_file, output_file, neighbourhood_depth\n", argv[0]);
+        if (*fdIn == -1) {
+                fprintf(stderr, "Usage: %s input_file, output_file, "
+                                "neighbourhood_depth\n", argv[FILE_NAME_ARG]);
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
 
-        if (*fd_out == -1) {
-                fprintf(stderr, "Usage: %s input_file, output_file, neighbourhood_depth\n", argv[0]);
-                close(*fd_in);
+        if (*fdOut == -1) {
+                fprintf(stderr, "Usage: %s input_file, output_file, "
+                                "neighbourhood_depth\n", argv[FILE_NAME_ARG]);
+                close(*fdIn);
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
 
-        *max_depth = atoi(argv[3]);
-        if (*max_depth < 0) {
-                fprintf(stderr, "Usage: %s input_file, output_file, neighbourhood_depth\n", argv[0]);
-                close(*fd_in);
-                close(*fd_out);
+        *maxDepth = atoi(argv[DEPTH]);
+        if (*maxDepth < 0) {
+                fprintf(stderr, "Usage: %s input_file, output_file, "
+                                "neighbourhood_depth\n", argv[FILE_NAME_ARG]);
+                close(*fdIn);
+                close(*fdOut);
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
 }
@@ -73,17 +82,18 @@ void parse_args(int argc, char *argv[], int *fd_in, int *fd_out, int *max_depth)
  *
  * Return: void (pass by reference).
  */
-void divide_rows(int* rows_each, int* M_rows, int matrix_size, int nprocs)
+void divide_rows(int* rowsEach, int* mainRows, int matrixSize, int nProcs)
 {
-        if (nprocs <= 0) {
-                fprintf(stderr, "Number of processes must be more than zero.\n");
+        if (nProcs <= 0) {
+                fprintf(stderr,
+                        "Number of processes must be more than zero.\n");
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
-        *rows_each = matrix_size / nprocs;
-        *M_rows = *rows_each + (matrix_size % nprocs);
-        if (nprocs > matrix_size) {
-                *rows_each = 1;
-                *M_rows = 1;
+        *rowsEach = matrixSize / nProcs;
+        *mainRows = *rowsEach + (matrixSize % nProcs);
+        if (nProcs > matrixSize) {
+                *rowsEach = 1;
+                *mainRows = 1;
         }
 }
 
@@ -100,7 +110,8 @@ void divide_rows(int* rows_each, int* M_rows, int matrix_size, int nprocs)
  */
 bool process_has_jobs(SHARED_DATA *shared, int me)
 {
-        return ((shared->m_rows + ((me - 1) * shared->rows_each)) < shared->matrix_size);
+        return ((shared->mainRows +
+                ((me - 1) * shared->rowsEach)) < shared->matrixSize);
 }
 
 /**
@@ -117,13 +128,14 @@ bool process_has_jobs(SHARED_DATA *shared, int me)
  *
  * Return: void (pass by reference).
  */
-void set_shared_data(SHARED_DATA *shared, int max_depth, int matrix_size, int m_rows, int rows_each)
+void set_shared_data(SHARED_DATA *shared, int maxDepth, int matrixSize,
+                     int mainRows, int rowsEach)
 {
-        shared->max_depth = max_depth;
-        shared->matrix_size = matrix_size;
-        shared->m_rows = m_rows;
-        shared->rows_each = rows_each;
-        shared->final_row = shared->matrix_size - 1;
+        shared->maxDepth = maxDepth;
+        shared->matrixSize = matrixSize;
+        shared->mainRows = mainRows;
+        shared->rowsEach = rowsEach;
+        shared->finalRow = shared->matrixSize - 1;
 }
 
 /**
@@ -136,13 +148,12 @@ void set_shared_data(SHARED_DATA *shared, int max_depth, int matrix_size, int m_
  *
  * Return: int, number of rows.
  */
-int set_recv_rows_main(SHARED_DATA *shared)
+void set_recv_rows_main(SHARED_DATA *shared, PROCESS_DATA *pData)
 {
-        int recv = shared->m_rows + shared->max_depth;
-        if (recv > shared->matrix_size) {
-                recv = shared->matrix_size;
+        pData->lengthLocalArray = shared->mainRows + shared->maxDepth;
+        if (pData->lengthLocalArray > shared->matrixSize) {
+                pData->lengthLocalArray = shared->matrixSize;
         }
-        return recv;
 }
 
 /**
@@ -158,27 +169,36 @@ int set_recv_rows_main(SHARED_DATA *shared)
  *
  * Return: void (pass by reference).
  */
-void set_process_data(PROCESS_DATA *p_data, SHARED_DATA *shared, bool is_main, int me)
+void set_process_data(PROCESS_DATA *pData, SHARED_DATA *shared,
+                      bool isMain, int me)
 {
-        if (is_main) {
-                p_data->first_calc_row = 0;
-                p_data->last_calc_row = shared->m_rows - 1;
-                p_data->me = me;
-                p_data->first_local_row = 0;
-                p_data->last_local_row = shared->m_rows - 1;
-                if (p_data->last_local_row > shared->final_row) {
-                        p_data->last_local_row = shared->final_row;
+        if (isMain) {
+                pData->firstCalcRow = 0;
+                pData->lastCalcRow = shared->mainRows - 1;
+                pData->me = me;
+                pData->firstLocalRow = 0;
+
+                // Last local row
+                pData->lastLocalRow = shared->mainRows - 1;
+                if (pData->lastLocalRow > shared->finalRow) {
+                        pData->lastLocalRow = shared->finalRow;
                 }
-                p_data->length_local_array = shared->m_rows + shared->max_depth;
-                if (p_data->length_local_array > shared->final_row + 1) {
-                        p_data->length_local_array = shared->final_row + 1;
+
+                // Length local array
+                pData->lengthLocalArray = shared->mainRows + shared->maxDepth;
+                if (pData->lengthLocalArray > shared->finalRow + 1) {
+                        pData->lengthLocalArray = shared->finalRow + 1;
                 }
-                p_data->total_rows = shared->m_rows;
+
+                pData->totalRows = shared->mainRows;
+                set_recv_rows_main(shared, pData);
         } else {
-                p_data->first_calc_row = first_calc_row(shared, me);
-                p_data->last_calc_row = last_calc_row(shared, p_data->first_calc_row);
-                p_data->me = me;
-                p_data->total_rows = shared->rows_each;
+                pData->firstCalcRow = first_calc_row(shared, me);
+                pData->lastCalcRow = last_calc_row(shared,
+                                                   pData->firstCalcRow);
+                pData->me = me;
+                pData->totalRows = shared->rowsEach;
+                calc_receiving_rows(shared, pData);
         }
 }
 
@@ -195,14 +215,14 @@ void set_process_data(PROCESS_DATA *p_data, SHARED_DATA *shared, bool is_main, i
  */
 int first_calc_row(SHARED_DATA *shared, int me)
 {
-        int first_row = shared->m_rows + ((me - 1) * shared->rows_each);
-        if (first_row > shared->final_row) {
-                first_row = shared->final_row;
+        int firstRow = shared->mainRows + ((me - 1) * shared->rowsEach);
+        if (firstRow > shared->finalRow) {
+                firstRow = shared->finalRow;
         }
-        if (first_row < 0) {
-                first_row = 0;
+        if (firstRow < 0) {
+                firstRow = 0;
         }
-        return first_row;
+        return firstRow;
 }
 
 /**
@@ -216,13 +236,13 @@ int first_calc_row(SHARED_DATA *shared, int me)
  *
  * Return: int, last row for calculations.
  */
-int last_calc_row(SHARED_DATA *shared, int first_row)
+int last_calc_row(SHARED_DATA *shared, int firstRow)
 {
-        int last_row = first_row + shared->rows_each - 1;
-        if (last_row > shared->final_row) {
-                last_row = shared->final_row;
+        int lastRow = firstRow + shared->rowsEach - 1;
+        if (lastRow > shared->finalRow) {
+                lastRow = shared->finalRow;
         }
-        return last_row;
+        return lastRow;
 }
 
 /**
@@ -237,20 +257,21 @@ int last_calc_row(SHARED_DATA *shared, int first_row)
  *
  * Return: int, total number of rows.
  */
-int calc_receiving_rows(SHARED_DATA *shared, PROCESS_DATA *p_data)
+void calc_receiving_rows(SHARED_DATA *shared, PROCESS_DATA *pData)
 {
-        int first_row = shared->m_rows + ((p_data->me - 1) * shared->rows_each) - shared->max_depth;
+        int firstRow = shared->mainRows + ((pData->me - 1) * shared->rowsEach)
+                - shared->maxDepth;
 
-        int last_row = (shared->m_rows + ((p_data->me - 1) * shared->rows_each) + (shared->rows_each - 1) + shared->max_depth);
-        if (last_row > shared->final_row) {
-                last_row = shared->final_row;
+        int lastRow = (shared->mainRows + ((pData->me - 1) * shared->rowsEach)
+                + (shared->rowsEach - 1) + shared->maxDepth);
+        if (lastRow > shared->finalRow) {
+                lastRow = shared->finalRow;
         }
-        if (first_row < 0) {
-                first_row = 0;
+        if (firstRow < 0) {
+                firstRow = 0;
         }
-        int receiving_rows = last_row - first_row + 1;
-        p_data->length_local_array = receiving_rows;
-        p_data->first_local_row = p_data->first_calc_row - first_row;
-        p_data->last_local_row = p_data->first_local_row + shared->rows_each - 1;
-        return receiving_rows;
+        int receivingRows = lastRow - firstRow + 1;
+        pData->lengthLocalArray = receivingRows;
+        pData->firstLocalRow = pData->firstCalcRow - firstRow;
+        pData->lastLocalRow = pData->firstLocalRow + shared->rowsEach - 1;
 }

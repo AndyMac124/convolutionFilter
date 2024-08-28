@@ -62,14 +62,14 @@ void build_empty_matrix(int ***matrix, int rows, int col)
  *
  * Return: void (pass by reference).
  */
-void copy_matrix(SHARED_DATA *shared, int **arr_in, int **arr_out)
+void copy_matrix(SHARED_DATA *shared, int **arrIn, int **arrOut)
 {
-        for (int row = 0; row < shared->m_rows + shared->max_depth; row++) {
-                if (row > shared->final_row) {
+        for (int row = 0; row < shared->mainRows + shared->maxDepth; row++) {
+                if (row > shared->finalRow) {
                         return;
                 }
-                for (int col = 0; col < shared->matrix_size; col++) {
-                        arr_in[row][col] = arr_out[row][col];
+                for (int col = 0; col < shared->matrixSize; col++) {
+                        arrIn[row][col] = arrOut[row][col];
                 }
         }
 }
@@ -89,13 +89,17 @@ void copy_matrix(SHARED_DATA *shared, int **arr_in, int **arr_out)
  *
  * Return: void (pass by reference).
  */
-void calculate_values(PROCESS_DATA *p_data, SHARED_DATA *shared, int **arr_out, int **arr_in)
+void calculate_values(PROCESS_DATA *pData, SHARED_DATA *shared,
+                      int **arrOut, int **arrIn)
 {
         int row = 0;
-        for (int i = p_data->first_local_row; i <= p_data->last_local_row; i++) {
-                for (int j = 0; j < shared->matrix_size; j++) {
-                        int val = rounded_weighted_average(arr_in, i, j, shared->max_depth, p_data->length_local_array, shared->matrix_size);
-                        arr_out[row][j] = val;
+        for (int i = pData->firstLocalRow; i <= pData->lastLocalRow; i++) {
+                for (int j = 0; j < shared->matrixSize; j++) {
+                        int val = weighted_average(arrIn, i, j,
+                                                   shared->maxDepth,
+                                                   pData->lengthLocalArray,
+                                                   shared->matrixSize);
+                        arrOut[row][j] = val;
                 }
                 row++;
         }
@@ -118,9 +122,11 @@ void calculate_values(PROCESS_DATA *p_data, SHARED_DATA *shared, int **arr_out, 
  *
  * Return: int, rounded weighted average for the index.
  */
-int rounded_weighted_average(int **local_matrix, int y, int x, int d, int max_rows, int size) {
-        double sub_total = 0;
-        double num_neighbours = 0;
+int weighted_average(int **localMatrix, int y, int x, int d, int maxRows,
+                     int size)
+{
+        double subTotal = 0;
+        double numNeighbours = 0;
 
         // i is set to our y cord minus depth
         for (int i = y + -d; i <= y + d; i++) {
@@ -132,31 +138,31 @@ int rounded_weighted_average(int **local_matrix, int y, int x, int d, int max_ro
                         double ax = abs(j - x);
 
                         // Take the greater of the two
-                        double c_depth = (ay > ax) ? ay : ax;
+                        double cDepth = (ay > ax) ? ay : ax;
                         // Precaution for division by zero next
-                        if (c_depth == 0) { continue; }
+                        if (cDepth == 0) { continue; }
 
-                        // Maximum / Current depth (m_c) is out multiplier
-                        double m_c = d / c_depth;
+                        // Maximum / Current depth (mc) is out multiplier
+                        double mc = d / cDepth;
 
                         // If not within matrix constraints, continue
-                        if ((i == y && j == x) || i > max_rows - 1 ||
+                        if ((i == y && j == x) || i > maxRows - 1 ||
                             j > size - 1 || i < 0 || j < 0) {
                                 continue;
                         }
 
                         // Add to sub_total the value at index times m_c
-                        sub_total += m_c * local_matrix[i][j];
-                        num_neighbours++;
+                        subTotal += mc * localMatrix[i][j];
+                        numNeighbours++;
                 }
         }
 
-        if (num_neighbours == 0) {
+        if (numNeighbours == 0) {
                 // If 1x1 matrix
-                return local_matrix[y][x];
+                return localMatrix[y][x];
         }
 
-        return sub_total / num_neighbours;
+        return subTotal / numNeighbours;
 }
 
 /**
@@ -169,7 +175,8 @@ int rounded_weighted_average(int **local_matrix, int y, int x, int d, int max_ro
  *
  * Return: void (pass by reference).
  */
-void free_int_array_memory(int **array, int rows) {
+void free_int_array_memory(int **array, int rows)
+{
         if (array == NULL) {
                 return;
         }
@@ -196,15 +203,17 @@ void free_int_array_memory(int **array, int rows) {
  *
  * Return: void (pass by reference).
  */
-void get_slot(int fd, int matrix_size, int row, int col, int *slot){
+void get_slot(int fd, int matrixSize, int row, int col, int *slot)
+{
         if ((row <= 0) ||
            (col <= 0) ||
-           (row > matrix_size) ||
-           (col > matrix_size)) {
+           (row > matrixSize) ||
+           (col > matrixSize)) {
                 fprintf(stderr,"indexes out of range");
                 MPI_Abort(MPI_COMM_WORLD, -1);
         } else {
-                off_t offset = (((row - 1)*matrix_size) + (col - 1))*sizeof(int);
+                off_t offset = (((row - 1) * matrixSize) + (col - 1))
+                        * sizeof(int);
                 if (offset < 0) {
                         fprintf(stderr,"offset overflow");
                         MPI_Abort(MPI_COMM_WORLD, -1);
@@ -234,25 +243,25 @@ void get_slot(int fd, int matrix_size, int row, int col, int *slot){
  *
  * Return: void (pass by reference).
  */
-void set_row(int fd, int matrix_size, int row, int matrix_row[])
+void set_row(int fd, int matrixSize, int row, int matrixRow[])
 {
-        if (row > matrix_size) {
-                fprintf(stderr,"indexes out of range");
+        if (row > matrixSize) {
+                fprintf(stderr,"Indexes out of range");
                 MPI_Abort(MPI_COMM_WORLD, -1);
         } else {
                 int column;
-                off_t offset = ((row - 1) * matrix_size) * sizeof(int);
+                off_t offset = ((row - 1) * matrixSize) * sizeof(int);
                 if (offset < 0) {
-                        fprintf(stderr, "offset overflow");
+                        fprintf(stderr, "Offset overflow");
                         MPI_Abort(MPI_COMM_WORLD, -1);
                 } else if (lseek(fd, offset, 0) < 0) {
                         perror("lseek failed");
                         MPI_Abort(MPI_COMM_WORLD, -1);
                 } else {
-                        for (column = 0; column < matrix_size; column++) {
-                                if (write(fd, &matrix_row[column],
+                        for (column = 0; column < matrixSize; column++) {
+                                if (write(fd, &matrixRow[column],
                                           sizeof(int)) < 0) {
-                                        perror("write failed");
+                                        perror("Write failed");
                                         MPI_Abort(MPI_COMM_WORLD, -1);
                                 }
                         }
